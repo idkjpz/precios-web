@@ -132,8 +132,14 @@ def _procesar_zip(zip_bytes: bytes) -> list[dict]:
     """Extrae y parsea todos los CSVs de un ZIP SEPA."""
     todos: list[dict] = []
     with zipfile.ZipFile(io.BytesIO(zip_bytes)) as zf:
-        nombres = [n for n in zf.namelist() if n.lower().endswith(".csv")]
-        logger.info(f"CSVs en el ZIP: {nombres}")
+        todos_archivos = zf.namelist()
+        logger.info(f"Todos los archivos en el ZIP ({len(todos_archivos)}): {todos_archivos[:30]}")
+        # Buscar CSVs en cualquier nivel de carpeta
+        nombres = [n for n in todos_archivos if n.lower().endswith(".csv")]
+        if not nombres:
+            # Intentar con .txt (algunos datasets usan .txt con formato CSV)
+            nombres = [n for n in todos_archivos if n.lower().endswith(".txt")]
+        logger.info(f"Archivos a parsear: {nombres}")
         for nombre_archivo in nombres:
             # El nombre del archivo suele ser el nombre de la cadena
             cadena_default = nombre_archivo.replace(".csv", "").replace("_", " ").strip()
