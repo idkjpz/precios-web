@@ -3,7 +3,6 @@ beautifulsoup4
 playwright
 lxml
 rich
-pandas
 fastapi
 uvicorn[standard]
 pydantic
