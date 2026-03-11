@@ -1,7 +1,12 @@
 import sys
 import os
+import asyncio
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Optional
+
+# Fix para Playwright en Windows: ProactorEventLoop no soporta subprocesos en threads
+if sys.platform == "win32":
+    asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
 
 from fastapi import FastAPI, Query
 from fastapi.middleware.cors import CORSMiddleware
