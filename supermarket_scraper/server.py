@@ -3,6 +3,7 @@ import os
 import asyncio
 import logging
 import threading
+from contextlib import asynccontextmanager
 from typing import Optional
 
 # Fix para Playwright en Windows: ProactorEventLoop no soporta subprocesos en threads
@@ -23,7 +24,26 @@ from sepa_downloader import descargar_y_actualizar
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 logger = logging.getLogger(__name__)
 
-app = FastAPI(title="PrecioYa API")
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    db.init_db()
+
+    ultima = db.get_meta("last_update")
+    from datetime import date
+    hoy = str(date.today())
+
+    if ultima != hoy or db.count_productos() == 0:
+        logger.info("DB desactualizada o vacía — iniciando descarga SEPA en background...")
+        t = threading.Thread(target=descargar_y_actualizar, daemon=True, name="sepa-startup")
+        t.start()
+    else:
+        logger.info(f"DB SEPA al día ({ultima}, {db.count_productos():,} productos)")
+
+    _iniciar_scheduler()
+    yield
+
+
+app = FastAPI(title="PrecioYa API", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
@@ -57,26 +77,6 @@ def _iniciar_scheduler():
     t = threading.Thread(target=_loop, daemon=True, name="sepa-scheduler")
     t.start()
 
-
-@app.on_event("startup")
-def on_startup():
-    db.init_db()
-
-    # Si la DB está vacía o el último update fue antes de hoy, descargar ahora
-    ultima = db.get_meta("last_update")
-    from datetime import date
-    hoy = str(date.today())
-
-    if ultima != hoy or db.count_productos() == 0:
-        logger.info("DB desactualizada o vacía — iniciando descarga SEPA en background...")
-        t = threading.Thread(
-            target=descargar_y_actualizar, daemon=True, name="sepa-startup"
-        )
-        t.start()
-    else:
-        logger.info(f"DB SEPA al día ({ultima}, {db.count_productos():,} productos)")
-
-    _iniciar_scheduler()
 
 
 # ── Modelos ───────────────────────────────────────────────────────────────────
