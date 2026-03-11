@@ -1,25 +1,39 @@
+import re
 import asyncio
 import sys
 import requests
-from urllib.parse import quote
 from bs4 import BeautifulSoup
 from .base_scraper import BaseScraper, Producto
 
 
+def _slugify(texto: str) -> str:
+    """Convierte "coca cola 2.25l" → "coca-cola-2-25l" (formato URL de CotoDigital)."""
+    texto = texto.lower().strip()
+    texto = re.sub(r"[^\w\s-]", "", texto)
+    texto = re.sub(r"[\s_]+", "-", texto)
+    texto = re.sub(r"-+", "-", texto)
+    return texto.strip("-")
+
+
 class CotoScraper(BaseScraper):
-    BASE_URL = "https://www.cotodigital3.com.ar"
-    SEARCH_URL = "https://www.cotodigital3.com.ar/sitios/cdigi/browse?Ntt={query}&view=grid&Nrpp=12"
+    BASE_URL = "https://www.cotodigital.com.ar"
+    # Formato actual: /sitios/cdigi/productos/{slug}
+    SEARCH_URL = "https://www.cotodigital.com.ar/sitios/cdigi/productos/{slug}"
 
     def _parsear_cards(self, soup: BeautifulSoup, max_resultados: int) -> list[Producto]:
         productos = []
 
+        # Selectores en orden de probabilidad (ATG + posibles variantes)
         cards = (
+            soup.select(".product-grid-container li") or
             soup.select("#products li") or
             soup.select(".grilla li") or
-            soup.select(".product-grid-container li") or
             soup.select(".products-grid .item") or
             soup.select("li[class*='product']") or
-            soup.select("[class*='grilla'] li")
+            soup.select("[class*='grilla'] li") or
+            soup.select("[class*='product-card']") or
+            soup.select(".shelf-item") or
+            soup.select("article[class*='product']")
         )
 
         for card in cards[:max_resultados]:
@@ -27,8 +41,9 @@ class CotoScraper(BaseScraper):
                 nombre_el = (
                     card.select_one(".descrip_full") or
                     card.select_one("[class*='descrip']") or
+                    card.select_one("[class*='product-name']") or
+                    card.select_one("[class*='productName']") or
                     card.select_one("h3 a") or
-                    card.select_one(".product-name a") or
                     card.select_one(".description a") or
                     card.select_one("a[title]")
                 )
@@ -36,7 +51,8 @@ class CotoScraper(BaseScraper):
                     card.select_one(".atg_store_newPrice") or
                     card.select_one(".atg_store_productPrice") or
                     card.select_one("[class*='price']") or
-                    card.select_one("[class*='Price']")
+                    card.select_one("[class*='Price']") or
+                    card.select_one("[class*='precio']")
                 )
                 link_el = card.select_one("a[href]")
 
@@ -75,7 +91,7 @@ class CotoScraper(BaseScraper):
         return productos[:max_resultados]
 
     async def _scrape_con_playwright(self, url: str) -> str:
-        """Carga la página con Playwright asíncrono y devuelve el HTML."""
+        """Carga la página con Playwright (para JS-heavy rendering)."""
         try:
             from playwright.async_api import async_playwright
         except ImportError:
@@ -90,7 +106,13 @@ class CotoScraper(BaseScraper):
             page = await context.new_page()
             await page.goto(url, timeout=30000)
 
-            for selector in ["#products li", ".grilla li", ".product-grid-container", "[class*='grilla']"]:
+            for selector in [
+                ".product-grid-container li",
+                "#products li",
+                ".grilla li",
+                "[class*='product-card']",
+                ".shelf-item",
+            ]:
                 try:
                     await page.wait_for_selector(selector, timeout=8000)
                     break
@@ -102,12 +124,15 @@ class CotoScraper(BaseScraper):
             return html
 
     def buscar(self, query: str, max_resultados: int = 6) -> list[Producto]:
-        url = self.SEARCH_URL.format(query=quote(query))
+        slug = _slugify(query)
+        url = self.SEARCH_URL.format(slug=slug)
+        print(f"[Coto] URL: {url}")
 
-        # Intento 1: requests directo (ATG renderiza HTML server-side)
+        # Intento 1: requests directo
         try:
             self._esperar()
             response = requests.get(url, headers=self.DEFAULT_HEADERS, timeout=15)
+            print(f"[Coto] HTTP {response.status_code}")
             if response.status_code == 200:
                 soup = BeautifulSoup(response.text, "lxml")
                 productos = self._parsear_cards(soup, max_resultados)
@@ -117,8 +142,7 @@ class CotoScraper(BaseScraper):
         except Exception as e:
             print(f"[Coto] Error con requests: {e}")
 
-        # Intento 2: async Playwright con ProactorEventLoop (el único que soporta
-        # subprocess en Windows; SelectorEventLoop y asyncio.run() no funcionan)
+        # Intento 2: Playwright (maneja JS si fuera necesario)
         try:
             if sys.platform == "win32":
                 loop = asyncio.ProactorEventLoop()
