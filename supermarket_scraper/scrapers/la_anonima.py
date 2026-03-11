@@ -8,12 +8,20 @@ class LaAnonimaScaper(BaseScraper):
     SEARCH_ENDPOINT = "/api/catalog_system/pub/products/search/{query}?_from=0&_to={to}"
     INTELLIGENT_SEARCH_ENDPOINT = "/api/io/_v/api/intelligent-search/product_search/?query={query}&count={count}&page=1"
 
-    API_HEADERS = {
-        **BaseScraper.DEFAULT_HEADERS,
-        "Accept": "application/json, text/plain, */*",
-        "Referer": "https://www.laanonimaonline.com/",
-        "Origin": "https://www.laanonimaonline.com",
-    }
+    def _make_session(self) -> requests.Session:
+        session = requests.Session()
+        session.headers.update({
+            **self.DEFAULT_HEADERS,
+            "Accept": "application/json, text/plain, */*",
+            "Referer": self.BASE_URL + "/",
+            "Origin": self.BASE_URL,
+        })
+        # Visitar homepage para obtener cookies de sesión
+        try:
+            session.get(self.BASE_URL, timeout=10)
+        except Exception:
+            pass
+        return session
 
     def _parsear_items_vtex(self, data: list) -> list[Producto]:
         productos = []
@@ -54,15 +62,18 @@ class LaAnonimaScaper(BaseScraper):
         return productos
 
     def buscar(self, query: str, max_resultados: int = 6) -> list[Producto]:
+        self._esperar()
+        session = self._make_session()
+
         # Intento 1: Legacy VTEX catalog search API
         url = self.BASE_URL + self.SEARCH_ENDPOINT.format(
             query=quote(query),
             to=max_resultados - 1,
         )
         try:
-            self._esperar()
-            response = requests.get(url, headers=self.API_HEADERS, timeout=15)
-            if response.status_code == 200:
+            response = session.get(url, timeout=15)
+            print(f"[La Anónima] API legacy status: {response.status_code}, body len: {len(response.text)}")
+            if response.status_code == 200 and response.text.strip():
                 data = response.json()
                 if isinstance(data, list) and data:
                     return self._parsear_items_vtex(data)[:max_resultados]
@@ -75,8 +86,9 @@ class LaAnonimaScaper(BaseScraper):
             count=max_resultados,
         )
         try:
-            response2 = requests.get(url2, headers=self.API_HEADERS, timeout=15)
-            if response2.status_code == 200:
+            response2 = session.get(url2, timeout=15)
+            print(f"[La Anónima] Intelligent Search status: {response2.status_code}, body len: {len(response2.text)}")
+            if response2.status_code == 200 and response2.text.strip():
                 data2 = response2.json()
                 products = data2.get("products", [])
                 if products:

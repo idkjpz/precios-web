@@ -104,6 +104,13 @@ class CotoScraper(BaseScraper):
 
         html = ""
         try:
+            # En Windows, los threads de ThreadPoolExecutor necesitan un SelectorEventLoop
+            # para que Playwright pueda crear subprocesos
+            import sys
+            if sys.platform == "win32":
+                import asyncio
+                asyncio.set_event_loop(asyncio.SelectorEventLoop())
+
             with sync_playwright() as p:
                 browser = p.chromium.launch(headless=True)
                 context = browser.new_context(
