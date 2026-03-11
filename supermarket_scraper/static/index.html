@@ -1,0 +1,739 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>PrecioYa — Comparador de Supermercados</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Mono:wght@400;500&family=DM+Sans:wght@400;500;700&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --bg: #0d0d0d;
+      --surface: #161616;
+      --surface2: #1e1e1e;
+      --border: #2a2a2a;
+      --accent: #e8ff47;
+      --green: #47ff8a;
+      --red: #ff4747;
+      --text: #f0f0f0;
+      --muted: #666;
+    }
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'DM Sans', sans-serif;
+      min-height: 100vh;
+      position: relative;
+      overflow-x: hidden;
+    }
+
+    /* Noise overlay */
+    body::before {
+      content: '';
+      position: fixed;
+      inset: 0;
+      opacity: 0.035;
+      pointer-events: none;
+      z-index: 999;
+      background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)'/%3E%3C/svg%3E");
+      background-repeat: repeat;
+      background-size: 200px 200px;
+    }
+
+    .container {
+      max-width: 860px;
+      margin: 0 auto;
+      padding: 0 20px;
+    }
+
+    /* ── HEADER ── */
+    header {
+      padding: 48px 0 32px;
+      text-align: center;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .logo {
+      font-family: 'Bebas Neue', cursive;
+      font-size: clamp(72px, 14vw, 120px);
+      letter-spacing: 4px;
+      color: var(--accent);
+      line-height: 1;
+      text-shadow: 0 0 40px rgba(232, 255, 71, 0.3);
+    }
+
+    .tagline {
+      font-family: 'DM Mono', monospace;
+      font-size: 12px;
+      color: var(--muted);
+      letter-spacing: 3px;
+      text-transform: uppercase;
+      margin-top: 8px;
+    }
+
+    .badges {
+      display: flex;
+      justify-content: center;
+      gap: 8px;
+      margin-top: 20px;
+      flex-wrap: wrap;
+    }
+
+    .badge {
+      font-family: 'DM Mono', monospace;
+      font-size: 10px;
+      font-weight: 500;
+      letter-spacing: 1.5px;
+      text-transform: uppercase;
+      padding: 4px 10px;
+      border-radius: 4px;
+      border: 1px solid;
+    }
+
+    .badge-carrefour { color: #4fa3e8; border-color: #4fa3e8; background: rgba(79,163,232,0.08); }
+    .badge-coto      { color: #e8844f; border-color: #e8844f; background: rgba(232,132,79,0.08); }
+    .badge-anonima   { color: #b04fe8; border-color: #b04fe8; background: rgba(176,79,232,0.08); }
+
+    /* ── SEARCH ── */
+    .search-section {
+      padding: 40px 0 24px;
+    }
+
+    .search-box {
+      display: flex;
+      gap: 10px;
+      margin-bottom: 20px;
+    }
+
+    .search-input {
+      flex: 1;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      color: var(--text);
+      font-family: 'DM Sans', sans-serif;
+      font-size: 16px;
+      padding: 14px 18px;
+      border-radius: 6px;
+      outline: none;
+      transition: border-color 0.2s;
+    }
+
+    .search-input:focus {
+      border-color: var(--accent);
+    }
+
+    .search-input::placeholder { color: var(--muted); }
+
+    .btn-buscar {
+      font-family: 'Bebas Neue', cursive;
+      font-size: 18px;
+      letter-spacing: 2px;
+      background: var(--accent);
+      color: #0d0d0d;
+      border: none;
+      padding: 14px 28px;
+      border-radius: 6px;
+      cursor: pointer;
+      transition: opacity 0.15s, transform 0.1s;
+      white-space: nowrap;
+    }
+
+    .btn-buscar:hover { opacity: 0.9; }
+    .btn-buscar:active { transform: scale(0.97); }
+
+    /* Filtros */
+    .filtros-label {
+      font-family: 'DM Mono', monospace;
+      font-size: 10px;
+      letter-spacing: 2px;
+      text-transform: uppercase;
+      color: var(--muted);
+      margin-bottom: 10px;
+    }
+
+    .filtros {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      margin-bottom: 20px;
+    }
+
+    .filtro-toggle {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      cursor: pointer;
+      padding: 6px 12px;
+      border-radius: 5px;
+      border: 1px solid var(--border);
+      background: var(--surface);
+      transition: all 0.15s;
+      user-select: none;
+    }
+
+    .filtro-toggle input { display: none; }
+
+    .filtro-toggle.active-carrefour { border-color: #4fa3e8; background: rgba(79,163,232,0.1); }
+    .filtro-toggle.active-coto      { border-color: #e8844f; background: rgba(232,132,79,0.1); }
+    .filtro-toggle.active-la_anonima { border-color: #b04fe8; background: rgba(176,79,232,0.1); }
+
+    .filtro-dot {
+      width: 8px; height: 8px;
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+    .dot-carrefour { background: #4fa3e8; }
+    .dot-coto      { background: #e8844f; }
+    .dot-la_anonima { background: #b04fe8; }
+
+    .filtro-text {
+      font-family: 'DM Mono', monospace;
+      font-size: 11px;
+      letter-spacing: 1px;
+      text-transform: uppercase;
+      color: var(--text);
+    }
+
+    /* Chips */
+    .chips-label {
+      font-family: 'DM Mono', monospace;
+      font-size: 10px;
+      letter-spacing: 2px;
+      text-transform: uppercase;
+      color: var(--muted);
+      margin-bottom: 10px;
+    }
+
+    .chips {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .chip {
+      font-family: 'DM Mono', monospace;
+      font-size: 11px;
+      letter-spacing: 0.5px;
+      padding: 5px 12px;
+      border-radius: 20px;
+      border: 1px solid var(--border);
+      background: transparent;
+      color: var(--muted);
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+
+    .chip:hover {
+      border-color: var(--accent);
+      color: var(--accent);
+    }
+
+    /* ── RESULTS ── */
+    .results-section { padding: 8px 0 60px; }
+
+    .results-meta {
+      font-family: 'DM Mono', monospace;
+      font-size: 11px;
+      letter-spacing: 1px;
+      color: var(--muted);
+      margin-bottom: 20px;
+      text-transform: uppercase;
+    }
+
+    /* Spinner */
+    .spinner {
+      display: none;
+      text-align: center;
+      padding: 60px 0;
+    }
+
+    .spinner.active { display: block; }
+
+    .spinner-ring {
+      width: 40px;
+      height: 40px;
+      border: 3px solid var(--border);
+      border-top-color: var(--accent);
+      border-radius: 50%;
+      animation: spin 0.7s linear infinite;
+      margin: 0 auto 12px;
+    }
+
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    .spinner-text {
+      font-family: 'DM Mono', monospace;
+      font-size: 11px;
+      letter-spacing: 2px;
+      color: var(--muted);
+      text-transform: uppercase;
+    }
+
+    /* Error */
+    .error-msg {
+      display: none;
+      font-family: 'DM Mono', monospace;
+      font-size: 13px;
+      color: var(--red);
+      padding: 20px;
+      border: 1px solid var(--red);
+      border-radius: 6px;
+      background: rgba(255,71,71,0.06);
+    }
+
+    .error-msg.active { display: block; }
+
+    /* Cards */
+    .cards { display: flex; flex-direction: column; gap: 12px; }
+
+    .card {
+      position: relative;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 20px 24px;
+      display: grid;
+      grid-template-columns: 52px 1fr auto;
+      gap: 0 16px;
+      align-items: center;
+      transition: border-color 0.2s;
+    }
+
+    .card:hover { border-color: #3a3a3a; }
+
+    .card.winner {
+      border-color: var(--green);
+      background: rgba(71, 255, 138, 0.04);
+    }
+
+    .card.loser {
+      border-color: rgba(255,71,71,0.3);
+    }
+
+    .card-rank {
+      font-family: 'Bebas Neue', cursive;
+      font-size: 48px;
+      color: var(--border);
+      line-height: 1;
+      text-align: center;
+    }
+
+    .card.winner .card-rank { color: rgba(71,255,138,0.2); }
+
+    .card-info { min-width: 0; }
+
+    .card-super {
+      font-family: 'DM Mono', monospace;
+      font-size: 10px;
+      letter-spacing: 2px;
+      text-transform: uppercase;
+      color: var(--muted);
+      margin-bottom: 4px;
+    }
+
+    .card-nombre {
+      font-size: 15px;
+      font-weight: 500;
+      line-height: 1.3;
+      color: var(--text);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .card-link {
+      font-family: 'DM Mono', monospace;
+      font-size: 11px;
+      color: var(--muted);
+      text-decoration: none;
+      margin-top: 6px;
+      display: inline-block;
+      transition: color 0.15s;
+    }
+    .card-link:hover { color: var(--accent); }
+
+    .card-precio-wrap { text-align: right; }
+
+    .card-precio {
+      font-family: 'Bebas Neue', cursive;
+      font-size: 36px;
+      letter-spacing: 1px;
+      line-height: 1;
+    }
+
+    .card-precio.precio-min { color: var(--green); }
+    .card-precio.precio-max { color: var(--red); }
+    .card-precio.precio-mid { color: var(--text); }
+
+    .card-diff {
+      font-family: 'DM Mono', monospace;
+      font-size: 11px;
+      color: var(--muted);
+      margin-top: 4px;
+    }
+
+    .card-diff.diff-pos { color: var(--red); }
+
+    /* Badge MÁS BARATO */
+    .badge-winner {
+      position: absolute;
+      top: -1px;
+      right: 16px;
+      font-family: 'Bebas Neue', cursive;
+      font-size: 11px;
+      letter-spacing: 2px;
+      background: var(--green);
+      color: #0d0d0d;
+      padding: 3px 10px;
+      border-radius: 0 0 6px 6px;
+    }
+
+    /* Color por super */
+    .super-carrefour { color: #4fa3e8; }
+    .super-coto      { color: #e8844f; }
+    .super-la_anonima,
+    .super-La\ Anónima { color: #b04fe8; }
+
+    /* Banner ahorro */
+    .banner-ahorro {
+      display: none;
+      margin-top: 28px;
+      padding: 20px 24px;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      font-family: 'DM Sans', sans-serif;
+      font-size: 15px;
+      color: var(--muted);
+    }
+
+    .banner-ahorro.active { display: block; }
+
+    .banner-ahorro strong {
+      color: var(--text);
+    }
+
+    .banner-ahorro .ahorro-monto {
+      font-family: 'Bebas Neue', cursive;
+      font-size: 28px;
+      color: var(--green);
+      letter-spacing: 1px;
+    }
+
+    .banner-ahorro .ahorro-pct {
+      color: var(--accent);
+    }
+
+    /* Empty state */
+    .empty {
+      display: none;
+      text-align: center;
+      padding: 60px 0;
+    }
+
+    .empty.active { display: block; }
+
+    .empty-icon {
+      font-size: 48px;
+      margin-bottom: 16px;
+      opacity: 0.3;
+    }
+
+    .empty-text {
+      font-family: 'DM Mono', monospace;
+      font-size: 13px;
+      color: var(--muted);
+      letter-spacing: 1px;
+    }
+
+    /* Responsive */
+    @media (max-width: 540px) {
+      .card {
+        grid-template-columns: 40px 1fr auto;
+        gap: 0 12px;
+        padding: 16px;
+      }
+      .card-rank { font-size: 36px; }
+      .card-precio { font-size: 28px; }
+      .card-nombre { font-size: 13px; }
+    }
+  </style>
+</head>
+<body>
+
+  <div class="container">
+
+    <!-- HEADER -->
+    <header>
+      <div class="logo">PrecioYa</div>
+      <div class="tagline">Comparador de supermercados argentinos</div>
+      <div class="badges">
+        <span class="badge badge-carrefour">Carrefour</span>
+        <span class="badge badge-coto">Coto</span>
+        <span class="badge badge-anonima">La Anónima</span>
+      </div>
+    </header>
+
+    <!-- SEARCH -->
+    <section class="search-section">
+      <div class="search-box">
+        <input
+          class="search-input"
+          id="searchInput"
+          type="text"
+          placeholder="Buscá un producto... (ej: leche entera 1l)"
+          autocomplete="off"
+        />
+        <button class="btn-buscar" id="btnBuscar">BUSCAR</button>
+      </div>
+
+      <div class="filtros-label">Supermercados</div>
+      <div class="filtros" id="filtros">
+        <label class="filtro-toggle active-carrefour" data-super="carrefour">
+          <input type="checkbox" checked />
+          <span class="filtro-dot dot-carrefour"></span>
+          <span class="filtro-text">Carrefour</span>
+        </label>
+        <label class="filtro-toggle active-coto" data-super="coto">
+          <input type="checkbox" checked />
+          <span class="filtro-dot dot-coto"></span>
+          <span class="filtro-text">Coto</span>
+        </label>
+        <label class="filtro-toggle active-la_anonima" data-super="la_anonima">
+          <input type="checkbox" checked />
+          <span class="filtro-dot dot-la_anonima"></span>
+          <span class="filtro-text">La Anónima</span>
+        </label>
+      </div>
+
+      <div class="chips-label">Búsquedas rápidas</div>
+      <div class="chips">
+        <button class="chip">leche entera</button>
+        <button class="chip">arroz largo fino</button>
+        <button class="chip">aceite girasol</button>
+        <button class="chip">yerba mate</button>
+        <button class="chip">azúcar</button>
+        <button class="chip">fideos spaghetti</button>
+        <button class="chip">harina 0000</button>
+        <button class="chip">mayonesa</button>
+        <button class="chip">papel higiénico</button>
+      </div>
+    </section>
+
+    <!-- RESULTS -->
+    <section class="results-section">
+      <div class="results-meta" id="resultsMeta"></div>
+
+      <div class="spinner" id="spinner">
+        <div class="spinner-ring"></div>
+        <div class="spinner-text">Buscando precios...</div>
+      </div>
+
+      <div class="error-msg" id="errorMsg"></div>
+
+      <div class="empty" id="emptyState">
+        <div class="empty-icon">🔍</div>
+        <div class="empty-text">Ingresá un producto para comparar precios</div>
+      </div>
+
+      <div class="cards" id="cards"></div>
+
+      <div class="banner-ahorro" id="bannerAhorro"></div>
+    </section>
+
+  </div>
+
+  <script>
+    const API_BASE = 'http://localhost:8000';
+
+    const searchInput = document.getElementById('searchInput');
+    const btnBuscar   = document.getElementById('btnBuscar');
+    const spinner     = document.getElementById('spinner');
+    const errorMsg    = document.getElementById('errorMsg');
+    const emptyState  = document.getElementById('emptyState');
+    const cardsEl     = document.getElementById('cards');
+    const metaEl      = document.getElementById('resultsMeta');
+    const bannerEl    = document.getElementById('bannerAhorro');
+    const filtrosEl   = document.getElementById('filtros');
+
+    // Filtros toggle
+    filtrosEl.querySelectorAll('.filtro-toggle').forEach(label => {
+      const checkbox = label.querySelector('input');
+      const superKey = label.dataset.super;
+      label.addEventListener('click', () => {
+        checkbox.checked = !checkbox.checked;
+        if (checkbox.checked) {
+          label.classList.add(`active-${superKey}`);
+        } else {
+          label.classList.remove(`active-${superKey}`);
+        }
+      });
+    });
+
+    function getActiveSupers() {
+      const activos = [];
+      filtrosEl.querySelectorAll('.filtro-toggle').forEach(label => {
+        const checkbox = label.querySelector('input');
+        if (checkbox.checked) activos.push(label.dataset.super);
+      });
+      return activos;
+    }
+
+    // Chips
+    document.querySelectorAll('.chip').forEach(chip => {
+      chip.addEventListener('click', () => {
+        searchInput.value = chip.textContent;
+        buscar();
+      });
+    });
+
+    btnBuscar.addEventListener('click', buscar);
+    searchInput.addEventListener('keydown', e => {
+      if (e.key === 'Enter') buscar();
+    });
+
+    function setSpinner(on) {
+      spinner.classList.toggle('active', on);
+    }
+
+    function setError(msg) {
+      if (msg) {
+        errorMsg.textContent = msg;
+        errorMsg.classList.add('active');
+      } else {
+        errorMsg.classList.remove('active');
+      }
+    }
+
+    function formatPrecio(precio) {
+      return '$' + precio.toLocaleString('es-AR', {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2
+      });
+    }
+
+    function superClass(superName) {
+      const map = {
+        'Carrefour': 'carrefour',
+        'Coto': 'coto',
+        'La Anónima': 'la_anonima',
+      };
+      return map[superName] || superName.toLowerCase().replace(/\s/g, '_');
+    }
+
+    function renderResults(data) {
+      cardsEl.innerHTML = '';
+      bannerEl.classList.remove('active');
+      emptyState.classList.remove('active');
+
+      const productos = data.productos;
+
+      if (!productos.length) {
+        emptyState.classList.add('active');
+        emptyState.querySelector('.empty-text').textContent =
+          `No se encontraron resultados para "${data.query}"`;
+        metaEl.textContent = '';
+        return;
+      }
+
+      const precioMin = productos[0].precio;
+      const precioMax = productos[productos.length - 1].precio;
+
+      metaEl.textContent =
+        `${productos.length} resultado${productos.length !== 1 ? 's' : ''} — ` +
+        `${data.supermercados_consultados.length} supermercado${data.supermercados_consultados.length !== 1 ? 's' : ''} consultado${data.supermercados_consultados.length !== 1 ? 's' : ''}`;
+
+      productos.forEach((p, i) => {
+        const isWinner = p.precio === precioMin;
+        const isLoser  = p.precio === precioMax && productos.length > 1;
+        const diff     = precioMin > 0 ? ((p.precio - precioMin) / precioMin * 100) : 0;
+        const superCls = superClass(p.supermercado);
+
+        let precioClass = 'precio-mid';
+        if (isWinner) precioClass = 'precio-min';
+        else if (isLoser) precioClass = 'precio-max';
+
+        const card = document.createElement('div');
+        card.className = `card${isWinner ? ' winner' : ''}${isLoser ? ' loser' : ''}`;
+
+        card.innerHTML = `
+          ${isWinner ? '<div class="badge-winner">MÁS BARATO</div>' : ''}
+          <div class="card-rank">${i + 1}</div>
+          <div class="card-info">
+            <div class="card-super super-${superCls}">${p.supermercado}</div>
+            <div class="card-nombre" title="${p.nombre}">${p.nombre}</div>
+            ${p.url ? `<a class="card-link" href="${p.url}" target="_blank" rel="noopener">Ver ↗</a>` : ''}
+          </div>
+          <div class="card-precio-wrap">
+            <div class="card-precio ${precioClass}">${formatPrecio(p.precio)}</div>
+            <div class="card-diff ${diff > 0 ? 'diff-pos' : ''}">
+              ${diff === 0 ? 'precio base' : '+' + diff.toFixed(1) + '%'}
+            </div>
+          </div>
+        `;
+
+        cardsEl.appendChild(card);
+      });
+
+      // Banner ahorro
+      if (productos.length > 1 && precioMax > precioMin) {
+        const ahorro = precioMax - precioMin;
+        const pct = ((ahorro / precioMax) * 100).toFixed(1);
+        bannerEl.innerHTML = `
+          Podés ahorrar hasta
+          <span class="ahorro-monto">${formatPrecio(ahorro)}</span>
+          <span class="ahorro-pct">(${pct}%)</span>
+          eligiendo el más barato
+        `;
+        bannerEl.classList.add('active');
+      }
+    }
+
+    async function buscar() {
+      const q = searchInput.value.trim();
+      if (!q) {
+        searchInput.focus();
+        return;
+      }
+
+      const supers = getActiveSupers();
+      if (!supers.length) {
+        setError('Seleccioná al menos un supermercado.');
+        return;
+      }
+
+      setError('');
+      setSpinner(true);
+      cardsEl.innerHTML = '';
+      metaEl.textContent = '';
+      bannerEl.classList.remove('active');
+      emptyState.classList.remove('active');
+
+      try {
+        const params = new URLSearchParams({
+          q,
+          supers: supers.join(','),
+          max: 6,
+        });
+        const res = await fetch(`${API_BASE}/api/buscar?${params}`);
+        if (!res.ok) throw new Error(`Error ${res.status}: ${res.statusText}`);
+        const data = await res.json();
+        renderResults(data);
+      } catch (err) {
+        setError(`No se pudo conectar al servidor. Verificá que esté corriendo en ${API_BASE}`);
+        console.error(err);
+      } finally {
+        setSpinner(false);
+      }
+    }
+
+    // Show empty state on load
+    emptyState.classList.add('active');
+  </script>
+
+</body>
+</html>
