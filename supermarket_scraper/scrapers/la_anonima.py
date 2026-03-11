@@ -6,7 +6,8 @@ from .base_scraper import BaseScraper, Producto
 class LaAnonimaScaper(BaseScraper):
     # El dominio principal es un SPA (VTEX IO), los endpoints API no funcionan ahí.
     # Usar el subdominio vtexcommercestable.com.br que expone la API directamente.
-    API_BASE = "https://laanonimaonline.vtexcommercestable.com.br"
+    # Candidatos de nombre de cuenta VTEX para La Anónima (probar en orden):
+    VTEX_ACCOUNTS = ["laanonima", "laanonimaonline", "anonimaonline"]
     FRONTEND_BASE = "https://www.laanonimaonline.com"
     SEARCH_ENDPOINT = "/api/catalog_system/pub/products/search/{query}?_from=0&_to={to}&sc=1"
 
@@ -56,20 +57,24 @@ class LaAnonimaScaper(BaseScraper):
 
     def buscar(self, query: str, max_resultados: int = 6) -> list[Producto]:
         self._esperar()
-        url = self.API_BASE + self.SEARCH_ENDPOINT.format(
-            query=quote(query),
-            to=max_resultados - 1,
-        )
-        try:
-            response = requests.get(url, headers=self.API_HEADERS, timeout=15)
-            if response.status_code == 200 and response.text.strip().startswith("["):
-                data = response.json()
-                if isinstance(data, list) and data:
-                    return self._parsear_items_vtex(data)[:max_resultados]
-                print(f"[La Anónima] API respondió OK pero sin productos para '{query}'")
-            else:
-                print(f"[La Anónima] Status {response.status_code}, respuesta no es JSON array")
-        except Exception as e:
-            print(f"[La Anónima] Error al buscar '{query}': {e}")
 
+        for account in self.VTEX_ACCOUNTS:
+            api_base = f"https://{account}.vtexcommercestable.com.br"
+            url = api_base + self.SEARCH_ENDPOINT.format(
+                query=quote(query),
+                to=max_resultados - 1,
+            )
+            try:
+                response = requests.get(url, headers=self.API_HEADERS, timeout=15)
+                preview = response.text[:150].strip()
+                print(f"[La Anónima] account={account} status={response.status_code} preview={repr(preview)}")
+
+                if response.status_code == 200 and preview.startswith("["):
+                    data = response.json()
+                    if isinstance(data, list) and data:
+                        return self._parsear_items_vtex(data)[:max_resultados]
+            except Exception as e:
+                print(f"[La Anónima] Error con account={account}: {e}")
+
+        print(f"[La Anónima] No se encontraron resultados para '{query}'")
         return []

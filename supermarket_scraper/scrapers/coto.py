@@ -117,9 +117,15 @@ class CotoScraper(BaseScraper):
         except Exception as e:
             print(f"[Coto] Error con requests: {e}")
 
-        # Intento 2: async Playwright (asyncio.run crea su propio event loop, funciona en threads)
+        # Intento 2: async Playwright con ProactorEventLoop (el único que soporta
+        # subprocess en Windows; SelectorEventLoop y asyncio.run() no funcionan)
         try:
-            html = asyncio.run(self._scrape_con_playwright(url))
+            if sys.platform == "win32":
+                loop = asyncio.ProactorEventLoop()
+                html = loop.run_until_complete(self._scrape_con_playwright(url))
+                loop.close()
+            else:
+                html = asyncio.run(self._scrape_con_playwright(url))
             if html:
                 soup = BeautifulSoup(html, "lxml")
                 return self._parsear_cards(soup, max_resultados)
