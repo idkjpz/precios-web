@@ -1,3 +1,4 @@
+import requests
 from urllib.parse import quote
 from bs4 import BeautifulSoup
 from .base_scraper import BaseScraper, Producto
@@ -5,62 +6,49 @@ from .base_scraper import BaseScraper, Producto
 
 class CotoScraper(BaseScraper):
     BASE_URL = "https://www.cotodigital3.com.ar"
-    SEARCH_URL = "https://www.cotodigital3.com.ar/sitios/cdigi/browse?Ntt={query}"
+    SEARCH_URL = "https://www.cotodigital3.com.ar/sitios/cdigi/browse?Ntt={query}&view=grid&Nrpp=12"
 
-    def buscar(self, query: str, max_resultados: int = 6) -> list[Producto]:
-        try:
-            from playwright.sync_api import sync_playwright
-        except ImportError:
-            print("[Coto] Playwright no está instalado.")
-            return []
-
-        url = self.SEARCH_URL.format(query=quote(query))
-        html = ""
-
-        try:
-            with sync_playwright() as p:
-                browser = p.chromium.launch(headless=True)
-                context = browser.new_context(
-                    user_agent=self.DEFAULT_HEADERS["User-Agent"],
-                    extra_http_headers={
-                        "Accept-Language": self.DEFAULT_HEADERS["Accept-Language"],
-                    },
-                )
-                page = context.new_page()
-                page.goto(url, timeout=30000)
-                try:
-                    page.wait_for_selector(".product-grid-container", timeout=15000)
-                except Exception:
-                    pass
-                html = page.content()
-                browser.close()
-        except Exception as e:
-            print(f"[Coto] Error con Playwright: {e}")
-            return []
-
-        soup = BeautifulSoup(html, "lxml")
+    def _parsear_cards(self, soup: BeautifulSoup, max_resultados: int) -> list[Producto]:
+        """Intenta extraer productos usando múltiples estrategias de selectores."""
         productos = []
 
-        product_items = soup.select(".product-grid-container .product-item") or \
-                        soup.select("[class*='product']")
-
-        # Try different selectors
+        # Estrategias para encontrar el contenedor de productos (ATG + custom)
         cards = (
-            soup.select(".products-grid .item") or
+            soup.select("#products li") or
+            soup.select(".grilla li") or
             soup.select(".product-grid-container li") or
-            soup.select("[class*='product-item']")
+            soup.select(".products-grid .item") or
+            soup.select("li[class*='product']") or
+            soup.select("[class*='grilla'] li")
         )
 
         for card in cards[:max_resultados]:
             try:
-                nombre_el = card.select_one(".description a") or card.select_one("a.product-name")
-                precio_el = card.select_one(".atg_store_newPrice") or card.select_one("[class*='price']")
-                link_el = card.select_one("a[href*='/product']") or card.select_one("a[href]")
+                # Nombre del producto
+                nombre_el = (
+                    card.select_one(".descrip_full") or
+                    card.select_one("[class*='descrip']") or
+                    card.select_one("h3 a") or
+                    card.select_one(".product-name a") or
+                    card.select_one(".description a") or
+                    card.select_one("a[title]")
+                )
+
+                # Precio
+                precio_el = (
+                    card.select_one(".atg_store_newPrice") or
+                    card.select_one(".atg_store_productPrice") or
+                    card.select_one("[class*='price']") or
+                    card.select_one("[class*='Price']")
+                )
+
+                # Link
+                link_el = card.select_one("a[href]")
 
                 if not nombre_el or not precio_el:
                     continue
 
-                nombre = nombre_el.get_text(strip=True)
+                nombre = nombre_el.get("title") or nombre_el.get_text(strip=True)
                 precio_texto = precio_el.get_text(strip=True)
                 precio = self._parsear_precio(precio_texto)
 
@@ -90,3 +78,56 @@ class CotoScraper(BaseScraper):
                 continue
 
         return productos[:max_resultados]
+
+    def buscar(self, query: str, max_resultados: int = 6) -> list[Producto]:
+        url = self.SEARCH_URL.format(query=quote(query))
+
+        # Intento 1: requests directo (ATG renderiza HTML server-side)
+        try:
+            self._esperar()
+            response = requests.get(url, headers=self.DEFAULT_HEADERS, timeout=15)
+            if response.status_code == 200:
+                soup = BeautifulSoup(response.text, "lxml")
+                productos = self._parsear_cards(soup, max_resultados)
+                if productos:
+                    return productos
+                print("[Coto] requests: página cargó pero no encontró productos, probando Playwright...")
+        except Exception as e:
+            print(f"[Coto] Error con requests: {e}")
+
+        # Intento 2: Playwright (para sitios con JavaScript)
+        try:
+            from playwright.sync_api import sync_playwright
+        except ImportError:
+            print("[Coto] Playwright no está instalado.")
+            return []
+
+        html = ""
+        try:
+            with sync_playwright() as p:
+                browser = p.chromium.launch(headless=True)
+                context = browser.new_context(
+                    user_agent=self.DEFAULT_HEADERS["User-Agent"],
+                    extra_http_headers={
+                        "Accept-Language": self.DEFAULT_HEADERS["Accept-Language"],
+                    },
+                )
+                page = context.new_page()
+                page.goto(url, timeout=30000)
+
+                # Esperar cualquier contenedor conocido
+                for selector in ["#products li", ".grilla li", ".product-grid-container", "[class*='grilla']"]:
+                    try:
+                        page.wait_for_selector(selector, timeout=8000)
+                        break
+                    except Exception:
+                        continue
+
+                html = page.content()
+                browser.close()
+        except Exception as e:
+            print(f"[Coto] Error con Playwright: {e}")
+            return []
+
+        soup = BeautifulSoup(html, "lxml")
+        return self._parsear_cards(soup, max_resultados)
