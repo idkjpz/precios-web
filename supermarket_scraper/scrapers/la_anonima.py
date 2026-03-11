@@ -4,24 +4,17 @@ from .base_scraper import BaseScraper, Producto
 
 
 class LaAnonimaScaper(BaseScraper):
-    BASE_URL = "https://www.laanonimaonline.com"
-    SEARCH_ENDPOINT = "/api/catalog_system/pub/products/search/{query}?_from=0&_to={to}"
-    INTELLIGENT_SEARCH_ENDPOINT = "/api/io/_v/api/intelligent-search/product_search/?query={query}&count={count}&page=1"
+    # El dominio principal es un SPA (VTEX IO), los endpoints API no funcionan ahí.
+    # Usar el subdominio vtexcommercestable.com.br que expone la API directamente.
+    API_BASE = "https://laanonimaonline.vtexcommercestable.com.br"
+    FRONTEND_BASE = "https://www.laanonimaonline.com"
+    SEARCH_ENDPOINT = "/api/catalog_system/pub/products/search/{query}?_from=0&_to={to}&sc=1"
 
-    def _make_session(self) -> requests.Session:
-        session = requests.Session()
-        session.headers.update({
-            **self.DEFAULT_HEADERS,
-            "Accept": "application/json, text/plain, */*",
-            "Referer": self.BASE_URL + "/",
-            "Origin": self.BASE_URL,
-        })
-        # Visitar homepage para obtener cookies de sesión
-        try:
-            session.get(self.BASE_URL, timeout=10)
-        except Exception:
-            pass
-        return session
+    API_HEADERS = {
+        **BaseScraper.DEFAULT_HEADERS,
+        "Accept": "application/json, text/plain, */*",
+        "Referer": "https://www.laanonimaonline.com/",
+    }
 
     def _parsear_items_vtex(self, data: list) -> list[Producto]:
         productos = []
@@ -30,7 +23,7 @@ class LaAnonimaScaper(BaseScraper):
                 nombre = item.get("productName", "")
                 link = item.get("link", "")
                 if not link.startswith("http"):
-                    link = self.BASE_URL + link
+                    link = self.FRONTEND_BASE + link
 
                 items = item.get("items", [])
                 if not items:
@@ -63,38 +56,20 @@ class LaAnonimaScaper(BaseScraper):
 
     def buscar(self, query: str, max_resultados: int = 6) -> list[Producto]:
         self._esperar()
-        session = self._make_session()
-
-        # Intento 1: Legacy VTEX catalog search API
-        url = self.BASE_URL + self.SEARCH_ENDPOINT.format(
+        url = self.API_BASE + self.SEARCH_ENDPOINT.format(
             query=quote(query),
             to=max_resultados - 1,
         )
         try:
-            response = session.get(url, timeout=15)
-            print(f"[La Anónima] API legacy status: {response.status_code}, body len: {len(response.text)}")
-            if response.status_code == 200 and response.text.strip():
+            response = requests.get(url, headers=self.API_HEADERS, timeout=15)
+            if response.status_code == 200 and response.text.strip().startswith("["):
                 data = response.json()
                 if isinstance(data, list) and data:
                     return self._parsear_items_vtex(data)[:max_resultados]
+                print(f"[La Anónima] API respondió OK pero sin productos para '{query}'")
+            else:
+                print(f"[La Anónima] Status {response.status_code}, respuesta no es JSON array")
         except Exception as e:
-            print(f"[La Anónima] Error con API legacy '{query}': {e}")
+            print(f"[La Anónima] Error al buscar '{query}': {e}")
 
-        # Intento 2: VTEX Intelligent Search API
-        url2 = self.BASE_URL + self.INTELLIGENT_SEARCH_ENDPOINT.format(
-            query=quote(query),
-            count=max_resultados,
-        )
-        try:
-            response2 = session.get(url2, timeout=15)
-            print(f"[La Anónima] Intelligent Search status: {response2.status_code}, body len: {len(response2.text)}")
-            if response2.status_code == 200 and response2.text.strip():
-                data2 = response2.json()
-                products = data2.get("products", [])
-                if products:
-                    return self._parsear_items_vtex(products)[:max_resultados]
-        except Exception as e:
-            print(f"[La Anónima] Error con Intelligent Search '{query}': {e}")
-
-        print(f"[La Anónima] No se encontraron resultados para '{query}'")
         return []
