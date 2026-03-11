@@ -10,6 +10,7 @@ Columnas conocidas del CSV SEPA:
   provincia, localidad, fecha
 """
 import io
+import os
 import csv
 import zipfile
 import sqlite3
@@ -128,29 +129,58 @@ def _parsear_csv(content: str, cadena_default: str = "") -> list[dict]:
     return list(agrupado.values())
 
 
+def _parsear_zip_interno(zip_bytes: bytes, nombre_zip: str) -> list[dict]:
+    """Extrae y parsea CSVs de un ZIP interno (por cadena)."""
+    productos: list[dict] = []
+    cadena_default = os.path.basename(nombre_zip).replace(".zip", "")
+    try:
+        with zipfile.ZipFile(io.BytesIO(zip_bytes)) as zf:
+            archivos = zf.namelist()
+            csvs = [n for n in archivos if n.lower().endswith(".csv")]
+            if not csvs:
+                csvs = [n for n in archivos if n.lower().endswith(".txt")]
+            logger.debug(f"  ZIP interno {nombre_zip}: {archivos}")
+            for nombre_csv in csvs:
+                with zf.open(nombre_csv) as f:
+                    content = f.read().decode("utf-8", errors="replace")
+                    resultado = _parsear_csv(content, cadena_default)
+                    logger.info(f"  {nombre_zip}/{nombre_csv}: {len(resultado)} productos")
+                    productos.extend(resultado)
+    except Exception as e:
+        logger.warning(f"Error en ZIP interno {nombre_zip}: {e}")
+    return productos
+
+
 def _procesar_zip(zip_bytes: bytes) -> list[dict]:
-    """Extrae y parsea todos los CSVs de un ZIP SEPA."""
+    """Extrae y parsea todos los CSVs de un ZIP SEPA (puede tener ZIPs anidados)."""
     todos: list[dict] = []
     with zipfile.ZipFile(io.BytesIO(zip_bytes)) as zf:
         todos_archivos = zf.namelist()
-        logger.info(f"Todos los archivos en el ZIP ({len(todos_archivos)}): {todos_archivos[:30]}")
-        # Buscar CSVs en cualquier nivel de carpeta
-        nombres = [n for n in todos_archivos if n.lower().endswith(".csv")]
-        if not nombres:
-            # Intentar con .txt (algunos datasets usan .txt con formato CSV)
-            nombres = [n for n in todos_archivos if n.lower().endswith(".txt")]
-        logger.info(f"Archivos a parsear: {nombres}")
-        for nombre_archivo in nombres:
-            # El nombre del archivo suele ser el nombre de la cadena
-            cadena_default = nombre_archivo.replace(".csv", "").replace("_", " ").strip()
-            with zf.open(nombre_archivo) as f:
+        logger.info(f"Archivos en ZIP externo ({len(todos_archivos)}): {todos_archivos[:5]}...")
+
+        csvs_directos = [n for n in todos_archivos if n.lower().endswith(".csv")]
+        zips_internos = [n for n in todos_archivos if n.lower().endswith(".zip")]
+
+        # Caso 1: CSVs directos en el ZIP externo
+        for nombre_csv in csvs_directos:
+            cadena_default = os.path.basename(nombre_csv).replace(".csv", "")
+            with zf.open(nombre_csv) as f:
                 try:
                     content = f.read().decode("utf-8", errors="replace")
-                    productos = _parsear_csv(content, cadena_default)
-                    logger.info(f"  {nombre_archivo}: {len(productos)} productos")
-                    todos.extend(productos)
+                    resultado = _parsear_csv(content, cadena_default)
+                    logger.info(f"  {nombre_csv}: {len(resultado)} productos")
+                    todos.extend(resultado)
                 except Exception as e:
-                    logger.warning(f"Error parseando {nombre_archivo}: {e}")
+                    logger.warning(f"Error parseando {nombre_csv}: {e}")
+
+        # Caso 2: ZIPs anidados (estructura SEPA actual)
+        logger.info(f"ZIPs internos a procesar: {len(zips_internos)}")
+        for nombre_zip in zips_internos:
+            with zf.open(nombre_zip) as f:
+                inner_bytes = f.read()
+            resultado = _parsear_zip_interno(inner_bytes, nombre_zip)
+            todos.extend(resultado)
+
     return todos
 
 
